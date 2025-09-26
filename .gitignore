@@ -13,3 +13,5 @@ pubspec.lock
 *.ipr
 *.iws
 .idea/
+gh
+gh.pub
