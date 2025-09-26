@@ -24,15 +24,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-// Import missing components
-import android.database.Cursor
-import android.net.Uri
-
-// Note: You must have a corresponding FlutterContacts.kt file with the select and
-// findIdWithLookupKey functions for the original plugin logic to work.
 
 class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler, ActivityAware, ActivityResultListener, RequestPermissionsResultListener {
-    // *** Added companion object for constants ***
     companion object {
         private var activity: Activity? = null
         private var context: Context? = null
@@ -53,18 +46,17 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         val channel = MethodChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "github.com/QuisApp/flutter_contacts")
         val eventChannel = EventChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "github.com/QuisApp/flutter_contacts/events")
-        // NOTE: We use a new instance to set the MethodCallHandler
-        channel.setMethodCallHandler(this) // Use 'this' instead of FlutterContactsPlugin() if it was the intention to use the current instance
-        eventChannel.setStreamHandler(this)
+        channel.setMethodCallHandler(FlutterContactsPlugin())
+        eventChannel.setStreamHandler(FlutterContactsPlugin())
         context = flutterPluginBinding.applicationContext
         resolver = context!!.contentResolver
     }
-    
-    // ... (onDetachedFromEngine, ActivityAware, ActivityResultListener, RequestPermissionsResultListener implementations remain unchanged)
 
     override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
         coroutineScope.cancel()
     }
+
+    // --- ActivityAware implementation ---
 
     override fun onDetachedFromActivity() { activity = null }
 
@@ -82,22 +74,20 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         binding.addActivityResultListener(this)
     }
 
+    // --- ActivityResultListener implementation ---
+
     override fun onActivityResult(
         requestCode: Int,
         resultCode: Int,
         intent: Intent?
     ): Boolean {
         when (requestCode) {
-            // NOTE: FlutterContacts class is missing, assuming it's available in the actual plugin
-            // Replace with actual constants if known, or leave as is.
-            // Assuming FlutterContacts is available in the same package or imported implicitly.
-            // If the original logic works, keep it.
-             /*FlutterContacts.*/REQUEST_CODE_VIEW ->
+            FlutterContacts.REQUEST_CODE_VIEW ->
                 if (viewResult != null) {
                     viewResult!!.success(null)
                     viewResult = null
                 }
-             /*FlutterContacts.*/REQUEST_CODE_EDIT ->
+            FlutterContacts.REQUEST_CODE_EDIT ->
                 if (editResult != null) {
                     // Result is of the form:
                     // content://com.android.contacts/contacts/lookup/<hash>/<id>
@@ -105,7 +95,7 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                     editResult!!.success(id)
                     editResult = null
                 }
-             /*FlutterContacts.*/REQUEST_CODE_PICK ->
+            FlutterContacts.REQUEST_CODE_PICK ->
                 if (pickResult != null) {
                     // Result is of the form:
                     // content://com.android.contacts/contacts/lookup/<hash>/<id>
@@ -113,7 +103,7 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                     pickResult!!.success(id)
                     pickResult = null
                 }
-             /*FlutterContacts.*/REQUEST_CODE_INSERT ->
+            FlutterContacts.REQUEST_CODE_INSERT ->
                 if (insertResult != null) {
                     val contactId = getContactIdFromExternalInsertResult(intent)
                     insertResult!!.success(contactId)
@@ -122,6 +112,8 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         }
         return true
     }
+
+    // --- RequestPermissionsResultListener implementation ---
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -153,67 +145,10 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         return false // did not handle the result
     }
 
-    // --- NEW: Function to retrieve all contacts (Cloud, SIM, Device) ---
-    private fun getAllContacts(): ArrayList<Map<String, String>> {
-        val contactsList = ArrayList<Map<String, String>>()
-        
-        // Use the official URI for phone data
-        val contentUri: Uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-
-        // Define the columns we want to retrieve
-        val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-            ContactsContract.CommonDataKinds.Phone.CONTACT_ID
-        )
-        
-        // Query the Contacts Provider for all phone numbers
-        val cursor: Cursor? = resolver?.query( // Use the class-level resolver
-            contentUri,
-            projection,
-            null,
-            null,
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
-        )
-
-        cursor?.use { 
-            val displayNameIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-            val phoneNumberIndex = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-            
-            while (it.moveToNext()) {
-                
-                // Read data from the Cursor
-                val displayName = if (displayNameIndex != -1) it.getString(displayNameIndex) else "Unknown"
-                val phoneNumber = if (phoneNumberIndex != -1) it.getString(phoneNumberIndex) else ""
-
-                // Map to a serializable Kotlin Map
-                val contactMap = mapOf(
-                    "displayName" to displayName,
-                    "phoneNumber" to phoneNumber.replace("[^0-9]".toRegex(), "")
-                )
-                contactsList.add(contactMap)
-            }
-        }
-        
-        return contactsList
-    }
-
     // --- MethodCallHandler implementation ---
 
     override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
         when (call.method) {
-            
-            // *** NEW METHOD HANDLER ***
-            "getAllContacts" -> 
-                coroutineScope.launch(Dispatchers.IO) {
-                    if (resolver == null) {
-                        coroutineScope.launch(Dispatchers.Main) { result.error("NO_RESOLVER", "ContentResolver not initialized.", null) }
-                        return@launch
-                    }
-                    val contacts = getAllContacts()
-                    coroutineScope.launch(Dispatchers.Main) { result.success(contacts) }
-                }
-
             // Requests permission to read/write contacts.
             "requestPermission" ->
                 coroutineScope.launch(Dispatchers.IO) {
@@ -251,28 +186,28 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                     val includeNonVisible = args[7] as Boolean
                     // args[8] = includeNotesOnIos13AndAbove
                     val contacts: List<Map<String, Any?>> =
-                         /*FlutterContacts.*/select( // NOTE: Assuming FlutterContacts.select is defined and accessible
-                                resolver!!,
-                                id,
-                                withProperties,
-                                // Sometimes thumbnail is available but photo is not, so we
-                                // fetch thumbnails even if only the photo was requested.
-                                withThumbnail || withPhoto,
-                                withPhoto,
-                                withGroups,
-                                withAccounts,
-                                returnUnifiedContacts,
-                                includeNonVisible
-                            )
+                        FlutterContacts.select(
+                            resolver!!,
+                            id,
+                            withProperties,
+                            // Sometimes thumbnail is available but photo is not, so we
+                            // fetch thumbnails even if only the photo was requested.
+                            withThumbnail || withPhoto,
+                            withPhoto,
+                            withGroups,
+                            withAccounts,
+                            returnUnifiedContacts,
+                            includeNonVisible
+                        )
                     coroutineScope.launch(Dispatchers.Main) { result.success(contacts) }
                 }
-            // ... (rest of the method handlers remain unchanged)
+            // Inserts a new contact and return it.
             "insert" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val contact = args[0] as Map<String, Any>
                     val insertedContact: Map<String, Any?>? =
-                         /*FlutterContacts.*/insert(resolver!!, contact) // NOTE: Assuming FlutterContacts.insert is defined and accessible
+                        FlutterContacts.insert(resolver!!, contact)
                     coroutineScope.launch(Dispatchers.Main) {
                         if (insertedContact != null) {
                             result.success(insertedContact)
@@ -281,13 +216,14 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                         }
                     }
                 }
+            // Updates an existing contact and returns it.
             "update" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val contact = args[0] as Map<String, Any>
                     val withGroups = args[1] as Boolean
                     val updatedContact: Map<String, Any?>? =
-                         /*FlutterContacts.*/update(resolver!!, contact, withGroups) // NOTE: Assuming FlutterContacts.update is defined and accessible
+                        FlutterContacts.update(resolver!!, contact, withGroups)
                     coroutineScope.launch(Dispatchers.Main) {
                         if (updatedContact != null) {
                             result.success(updatedContact)
@@ -296,72 +232,81 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
                         }
                     }
                 }
+            // Deletes contacts with given IDs.
             "delete" ->
                 coroutineScope.launch(Dispatchers.IO) {
-                     /*FlutterContacts.*/delete(resolver!!, call.arguments as List<String>) // NOTE: Assuming FlutterContacts.delete is defined and accessible
+                    FlutterContacts.delete(resolver!!, call.arguments as List<String>)
                     coroutineScope.launch(Dispatchers.Main) { result.success(null) }
                 }
+            // Fetches all groups.
             "getGroups" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val groups: List<Map<String, Any?>> =
-                         /*FlutterContacts.*/getGroups(resolver!!) // NOTE: Assuming FlutterContacts.getGroups is defined and accessible
+                        FlutterContacts.getGroups(resolver!!)
                     coroutineScope.launch(Dispatchers.Main) { result.success(groups) }
                 }
+            // Insert a new group and returns it.
             "insertGroup" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val group = args[0] as Map<String, Any>
                     val insertedGroup: Map<String, Any?>? =
-                         /*FlutterContacts.*/insertGroup(resolver!!, group) // NOTE: Assuming FlutterContacts.insertGroup is defined and accessible
+                        FlutterContacts.insertGroup(resolver!!, group)
                     coroutineScope.launch(Dispatchers.Main) {
                         result.success(insertedGroup)
                     }
                 }
+            // Updates a group and returns it.
             "updateGroup" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val group = args[0] as Map<String, Any>
                     val updatedGroup: Map<String, Any?>? =
-                         /*FlutterContacts.*/updateGroup(resolver!!, group) // NOTE: Assuming FlutterContacts.updateGroup is defined and accessible
+                        FlutterContacts.updateGroup(resolver!!, group)
                     coroutineScope.launch(Dispatchers.Main) {
                         result.success(updatedGroup)
                     }
                 }
+            // Deletes a group.
             "deleteGroup" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val group = args[0] as Map<String, Any>
-                     /*FlutterContacts.*/deleteGroup(resolver!!, group) // NOTE: Assuming FlutterContacts.deleteGroup is defined and accessible
+                    FlutterContacts.deleteGroup(resolver!!, group)
                     coroutineScope.launch(Dispatchers.Main) {
                         result.success(null)
                     }
                 }
+            // Opens external contact app to view existing contact.
             "openExternalView" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val id = args[0] as String
-                     /*FlutterContacts.*/openExternalViewOrEdit(activity, context, id, false) // NOTE: Assuming FlutterContacts.openExternalViewOrEdit is defined and accessible
+                    FlutterContacts.openExternalViewOrEdit(activity, context, id, false)
                     viewResult = result
                 }
+            // Opens external contact app to edit existing contact.
             "openExternalEdit" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     val args = call.arguments as List<Any>
                     val id = args[0] as String
-                     /*FlutterContacts.*/openExternalViewOrEdit(activity, context, id, true) // NOTE: Assuming FlutterContacts.openExternalViewOrEdit is defined and accessible
+                    FlutterContacts.openExternalViewOrEdit(activity, context, id, true)
                     editResult = result
                 }
+            // Opens external contact app to pick an existing contact.
             "openExternalPick" ->
                 coroutineScope.launch(Dispatchers.IO) {
-                     /*FlutterContacts.*/openExternalPickOrInsert(activity, context, false) // NOTE: Assuming FlutterContacts.openExternalPickOrInsert is defined and accessible
+                    FlutterContacts.openExternalPickOrInsert(activity, context, false)
                     pickResult = result
                 }
+            // Opens external contact app to insert a new contact.
             "openExternalInsert" ->
                 coroutineScope.launch(Dispatchers.IO) {
                     var args = call.arguments as List<Any>
                     val contact = args.getOrNull(0)?.let { it as? Map<String, Any?> } ?: run {
                         null
                     }
-                     /*FlutterContacts.*/openExternalPickOrInsert(activity, context, true, contact) // NOTE: Assuming FlutterContacts.openExternalPickOrInsert is defined and accessible
+                    FlutterContacts.openExternalPickOrInsert(activity, context, true, contact)
                     insertResult = result
                 }
             else -> result.notImplemented()
@@ -400,25 +345,25 @@ class FlutterContactsPlugin : FlutterPlugin, MethodCallHandler, EventChannel.Str
         if (secondToLastSegment == "raw_contacts") {
             val rawId = segments.last()
             val contacts: List<Map<String, Any?>> =
-                 /*FlutterContacts.*/select( // NOTE: Assuming FlutterContacts.select is defined and accessible
-                        resolver!!,
-                        rawId,
-                        /*withProperties=*/false,
-                        /*withThumbnail=*/false,
-                        /*withPhoto=*/false,
-                        /*withGroups=*/false,
-                        /*withAccounts=*/false,
-                        /*returnUnifiedContacts=*/true,
-                        /*includeNonVisible=*/true,
-                        /*idIsRawContactId=*/true
-                    )
+                FlutterContacts.select(
+                    resolver!!,
+                    rawId,
+                    /*withProperties=*/false,
+                    /*withThumbnail=*/false,
+                    /*withPhoto=*/false,
+                    /*withGroups=*/false,
+                    /*withAccounts=*/false,
+                    /*returnUnifiedContacts=*/true,
+                    /*includeNonVisible=*/true,
+                    /*idIsRawContactId=*/true
+                )
             if (contacts.isEmpty()) {
                 return null
             }
             return contacts[0]["id"] as String?
         } else {
             val lookupKey = secondToLastSegment
-            val contactId = /*FlutterContacts.*/findIdWithLookupKey( // NOTE: Assuming FlutterContacts.findIdWithLookupKey is defined and accessible
+            val contactId = FlutterContacts.findIdWithLookupKey(
                 resolver!!,
                 lookupKey
             )
